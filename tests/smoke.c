@@ -169,10 +169,8 @@ int main(int argc, char **argv) {
 #endif
 
   /* Avoid non-portable object-pointer/function-pointer casts and warnings. */
-  if (sizeof(get_api_base) != sizeof(symbol)) {
-    fprintf(stderr, "Unsupported loader function pointer representation\n");
-    goto cleanup;
-  }
+  _Static_assert(sizeof(get_api_base) == sizeof(symbol),
+                 "Unsupported loader function pointer representation");
   memcpy(&get_api_base, &symbol, sizeof(get_api_base));
   base = get_api_base();
   if (base == NULL || base->GetVersionString == NULL || base->GetApi == NULL) {

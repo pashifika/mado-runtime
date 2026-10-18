@@ -32,6 +32,8 @@ Print the configured release tag:
 python scripts/runtime.py tag
 ```
 
+The current manifest prints `onnxruntime-v1.29.0-r1`.
+
 Build on an Apple Silicon Mac with Xcode command line tools, Git and Python 3.12 installed:
 
 ```bash

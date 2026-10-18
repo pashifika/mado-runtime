@@ -70,9 +70,15 @@ def build(config, target, work, root, run):
     actual = capture(["git", "rev-parse", "HEAD"], source)
     if actual != config["source"]["commit"]:
         raise ValueError("Source checkout did not match pinned commit")
-    run(["git", "submodule", "update", "--init", "--recursive", "--depth=1"], cwd=source)
     if (source / "VERSION_NUMBER").read_text().strip() != config["version"]:
         raise ValueError("Pinned source version does not match manifest")
+    # Dynamic loading needs no ORT import library: fail on harness compiler/linker
+    # errors before spending time fetching dependencies and building the runtime.
+    compile_smoke(target, source / "include/onnxruntime/core/session", work, root, run)
+    if target["system"] == "Windows":
+        run(["cargo", "+1.98.1", "build", "--locked", "--manifest-path", root / "tests/consumer/Cargo.toml",
+             "--target", "x86_64-pc-windows-msvc", "--target-dir", work / "rust-consumer-target"])
+    run(["git", "submodule", "update", "--init", "--recursive", "--depth=1"], cwd=source)
     command = [sys.executable, source / "tools/ci_build/build.py", "--build_dir", build_dir,
                "--config", "Release", "--update", "--build", "--parallel", "2",
                "--build_shared_lib", "--skip_tests", "--compile_no_warning_as_error", "--skip_submodule_sync", "--no_telemetry"]
@@ -166,17 +172,13 @@ def ucrt_compiler():
     return Path(os.environ.get("MSYS2_LOCATION") or "C:/msys64") / "ucrt64/bin/gcc.exe"
 
 
-def smoke(config, target, stage, work, root, run):
-    library = stage / ("bin/onnxruntime.dll" if target["system"] == "Windows" else f"lib/libonnxruntime.{config['version']}.dylib")
+def compile_smoke(target, include, work, root, run):
     smoke = work / ("smoke.exe" if target["system"] == "Windows" else "smoke")
-    include = stage / "include/onnxruntime"
     if target["system"] == "Windows":
         compiler = ["cl", "/nologo", "/std:c11", "/W4", "/WX", "/TC", f"/I{include}", root / "tests/smoke.c", f"/Fe:{smoke}"]
     else:
         compiler = ["clang", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", include, root / "tests/smoke.c", "-o", smoke]
     run(compiler, cwd=work)
-    run([smoke, library, root / "tests/identity.onnx", config["version"]])
-    smoke_results = {"native": True}
     if target["system"] == "Windows":
         gcc = ucrt_compiler()
         if not gcc.is_file():
@@ -184,6 +186,17 @@ def smoke(config, target, stage, work, root, run):
         ucrt_smoke = work / "smoke-ucrt64.exe"
         run([gcc, "-municode", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", include,
              root / "tests/smoke.c", "-o", ucrt_smoke], cwd=work)
+
+
+def smoke(config, target, stage, work, root, run):
+    library = stage / ("bin/onnxruntime.dll" if target["system"] == "Windows" else f"lib/libonnxruntime.{config['version']}.dylib")
+    compile_smoke(target, stage / "include/onnxruntime", work, root, run)
+    smoke = work / ("smoke.exe" if target["system"] == "Windows" else "smoke")
+    run([smoke, library, root / "tests/identity.onnx", config["version"]])
+    smoke_results = {"native": True}
+    if target["system"] == "Windows":
+        gcc = ucrt_compiler()
+        ucrt_smoke = work / "smoke-ucrt64.exe"
         environment = os.environ.copy()
         environment["PATH"] = str(gcc.parent) + os.pathsep + environment["PATH"]
         run([ucrt_smoke, library, root / "tests/identity.onnx", config["version"]], env=environment)

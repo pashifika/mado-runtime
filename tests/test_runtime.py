@@ -72,6 +72,21 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class SmokeOrchestrationTests(unittest.TestCase):
+    def test_preflight_compiles_both_windows_harnesses_with_strict_warnings(self):
+        from unittest.mock import Mock, patch
+        config = runtime.load_config()
+        runner = Mock()
+        include = Path("source/include/onnxruntime/core/session")
+        with patch.object(Path, "is_file", return_value=True):
+            runtime.onnxruntime.compile_smoke(config["targets"][0], include, Path("work"), ROOT, runner)
+        commands = [call.args[0] for call in runner.call_args_list]
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(commands[0][0], "cl")
+        self.assertIn("/WX", commands[0])
+        self.assertIn(f"/I{include}", commands[0])
+        self.assertIn("-Werror", commands[1])
+        self.assertIn(include, commands[1])
+
     def test_windows_runs_pinned_msvc_rust_consumer(self):
         from unittest.mock import Mock, patch
         config = runtime.load_config()
