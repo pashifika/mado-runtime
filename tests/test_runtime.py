@@ -85,6 +85,10 @@ class SmokeOrchestrationTests(unittest.TestCase):
         self.assertIn("/WX", commands[0])
         self.assertIn(f"/I{include}", commands[0])
         self.assertIn("-Werror", commands[1])
+        self.assertIn("-v", commands[1])
+        self.assertNotIn("env", runner.call_args_list[0].kwargs)
+        self.assertEqual(runner.call_args_list[1].kwargs["env"],
+                         runtime.onnxruntime.ucrt_environment(runtime.onnxruntime.ucrt_compiler()))
         self.assertIn(include, commands[1])
 
     def test_windows_runs_pinned_msvc_rust_consumer(self):
@@ -99,6 +103,21 @@ class SmokeOrchestrationTests(unittest.TestCase):
         self.assertIn(Path("stage/bin/onnxruntime.dll"), command)
         self.assertEqual(runner.call_args.kwargs["env"]["ORT_DISABLE_TELEMETRY"], "1")
         self.assertTrue(result["mado_rust_ort_api17"])
+
+    def test_ucrt_environment_is_shared_without_mutating_msvc_path(self):
+        import os
+        from unittest.mock import Mock, patch
+        config = runtime.load_config()
+        runner = Mock()
+        gcc = Path("msys/ucrt64/bin/gcc.exe")
+        with patch.dict(os.environ, {"PATH": "msvc-tools", "MSYS2_LOCATION": "msys"}, clear=True), patch.object(Path, "is_file", return_value=True):
+            runtime.onnxruntime.smoke(config, config["targets"][0], Path("stage"), Path("work"), ROOT, runner)
+            self.assertEqual(os.environ["PATH"], "msvc-tools")
+            gcc_call = next(call for call in runner.call_args_list if call.args[0][0] == gcc)
+            executable_call = next(call for call in runner.call_args_list if call.args[0][0] == Path("work/smoke-ucrt64.exe"))
+            self.assertEqual(gcc_call.kwargs["env"], executable_call.kwargs["env"])
+            self.assertEqual(gcc_call.kwargs["env"]["PATH"], str(gcc.parent) + os.pathsep + "msvc-tools")
+            self.assertEqual(runner.call_args.kwargs["env"]["PATH"], "msvc-tools")
 
     def test_rust_failure_propagates(self):
         from unittest.mock import patch

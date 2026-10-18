@@ -57,8 +57,8 @@ def allocator_enabled(cache):
     return bool(match and match.group(1).strip().upper() in {"ON", "TRUE", "YES", "1"})
 
 
-def capture(command, cwd=None):
-    return subprocess.check_output(command, cwd=cwd, text=True, stderr=subprocess.STDOUT).strip()
+def capture(command, cwd=None, env=None):
+    return subprocess.check_output(command, cwd=cwd, env=env, text=True, stderr=subprocess.STDOUT).strip()
 
 
 def build(config, target, work, root, run):
@@ -149,7 +149,7 @@ def build(config, target, work, root, run):
                               capture_output=True, text=True)
     compiler_version = compiler.stdout + compiler.stderr
     if target["system"] == "Windows":
-        compiler_version += capture([str(ucrt_compiler()), "--version"])
+        compiler_version += capture([str(ucrt_compiler()), "--version"], env=ucrt_environment(ucrt_compiler()))
         windows_toolchain.update(rustc=capture(["rustc", "+1.98.1", "--version", "--verbose"]),
                                  cargo=capture(["cargo", "+1.98.1", "--version"]))
     provenance = {
@@ -172,6 +172,14 @@ def ucrt_compiler():
     return Path(os.environ.get("MSYS2_LOCATION") or "C:/msys64") / "ucrt64/bin/gcc.exe"
 
 
+def ucrt_environment(gcc):
+    # GCC's child tools need the same UCRT DLL search path as the test executable.
+    # Keep this local so MSVC, Rust and ORT build subprocesses retain their PATH.
+    environment = os.environ.copy()
+    environment["PATH"] = str(gcc.parent) + os.pathsep + environment.get("PATH", "")
+    return environment
+
+
 def compile_smoke(target, include, work, root, run):
     smoke = work / ("smoke.exe" if target["system"] == "Windows" else "smoke")
     if target["system"] == "Windows":
@@ -184,8 +192,8 @@ def compile_smoke(target, include, work, root, run):
         if not gcc.is_file():
             raise FileNotFoundError("Install MSYS2 UCRT64 GCC before building")
         ucrt_smoke = work / "smoke-ucrt64.exe"
-        run([gcc, "-municode", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", include,
-             root / "tests/smoke.c", "-o", ucrt_smoke], cwd=work)
+        run([gcc, "-v", "-municode", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", include,
+             root / "tests/smoke.c", "-o", ucrt_smoke], cwd=work, env=ucrt_environment(gcc))
 
 
 def smoke(config, target, stage, work, root, run):
@@ -197,9 +205,7 @@ def smoke(config, target, stage, work, root, run):
     if target["system"] == "Windows":
         gcc = ucrt_compiler()
         ucrt_smoke = work / "smoke-ucrt64.exe"
-        environment = os.environ.copy()
-        environment["PATH"] = str(gcc.parent) + os.pathsep + environment["PATH"]
-        run([ucrt_smoke, library, root / "tests/identity.onnx", config["version"]], env=environment)
+        run([ucrt_smoke, library, root / "tests/identity.onnx", config["version"]], env=ucrt_environment(gcc))
         smoke_results["ucrt64_gcc_consumer"] = True
         # Match Mado's pinned Rust binding initialization, using the MSVC target.
         environment = os.environ.copy()
