@@ -1,0 +1,168 @@
+import copy
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+import zipfile
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("runtime", ROOT / "scripts/runtime.py")
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+
+
+class ConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        self.config = runtime.load_config()
+
+    def validate(self, config):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            path.write_text(json.dumps(config))
+            return runtime.load_config(path)
+
+    def test_matrix_and_names(self):
+        self.assertEqual(len(runtime.matrix(self.config)["include"]), 2)
+        self.assertEqual(runtime.release_tag(self.config), "onnxruntime-v1.29.0-r1")
+        self.assertEqual(runtime.archive_name(self.config, self.config["targets"][0]),
+                         "onnxruntime-v1.29.0-r1-windows-x64-cpu-mimalloc.zip")
+
+    def test_dependent_allocator_cache(self):
+        for cache in ("", "onnxruntime_USE_MIMALLOC:BOOL=OFF", "onnxruntime_USE_MIMALLOC:INTERNAL=OFF"):
+            self.assertFalse(runtime.onnxruntime.allocator_enabled(cache))
+        for kind in ("BOOL", "INTERNAL", "UNINITIALIZED"):
+            self.assertTrue(runtime.onnxruntime.allocator_enabled(f"onnxruntime_USE_MIMALLOC:{kind}=ON"))
+
+    def test_reject_invalid_configurations(self):
+        mutations = [
+            lambda c: c.update(schema_version=2),
+            lambda c: c.update(runtime="../unsupported"),
+            lambda c: c.update(version="../1.29.0"),
+            lambda c: c.update(revision=True),
+            lambda c: c["source"].update(commit="main"),
+            lambda c: c["source"].update(commit="0" * 40),
+            lambda c: c["source"].update(repository="https://untrusted.invalid/runtime"),
+            lambda c: c.update(c_api_version=29),
+            lambda c: c.update(targets=[]),
+            lambda c: c["targets"].append(c["targets"][0]),
+            lambda c: c["targets"][1].update(allocator="mimalloc"),
+            lambda c: c["targets"][0].update(id="../../escape"),
+        ]
+        for mutation in mutations:
+            config = copy.deepcopy(self.config)
+            mutation(config)
+            with self.subTest(config=config), self.assertRaises(ValueError):
+                self.validate(config)
+
+
+class ArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.config = runtime.load_config()
+        self.target = self.config["targets"][0]
+        self.stage = self.root / "stage"
+        self.stage.mkdir()
+        for name in runtime.onnxruntime.required_files(self.config, self.target):
+            path = self.stage / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture contents")
+        self.provenance = {"repository_commit": "a" * 40}
+
+    def package(self):
+        return runtime.package(self.stage, self.root / "dist", self.config, self.target, self.provenance)
+
+    def rewrite(self, archive, transform):
+        with zipfile.ZipFile(archive) as bundle:
+            contents = {name: bundle.read(name) for name in bundle.namelist()}
+        transform(contents)
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for name, data in contents.items():
+                bundle.writestr(name, data)
+        archive.with_suffix(".zip.sha256").write_text(f"{runtime.sha256(archive)}  {archive.name}\n")
+
+    def test_roundtrip(self):
+        archive = self.package()
+        manifest = runtime.verify_archive(archive, self.config, self.target)
+        self.assertEqual(manifest["source"], self.config["source"])
+        self.assertIn("bin/onnxruntime.dll", manifest["files"])
+
+    def test_missing_required_library(self):
+        (self.stage / "bin/onnxruntime.dll").unlink()
+        with self.assertRaises(ValueError):
+            self.package()
+
+    def test_checksum_tampering(self):
+        archive = self.package()
+        with archive.open("ab") as stream:
+            stream.write(b"tamper")
+        with self.assertRaises(ValueError):
+            runtime.verify_archive(archive, self.config, self.target)
+
+    def test_inventory_tampering(self):
+        archive = self.package()
+        self.rewrite(archive, lambda files: files.update({"bin/onnxruntime.dll": b"changed"}))
+        with self.assertRaises(ValueError):
+            runtime.verify_archive(archive, self.config, self.target)
+
+    def test_unsafe_paths(self):
+        for name in ("../escape", "/absolute", "C:/escape", "lib\\escape"):
+            with self.subTest(name=name):
+                stage = self.stage / "manifest.json"
+                stage.unlink(missing_ok=True)
+                output = self.root / "dist"
+                if output.exists():
+                    import shutil
+                    shutil.rmtree(output)
+                archive = self.package()
+                self.rewrite(archive, lambda files: files.update({name: b"unsafe"}))
+                with self.assertRaises(ValueError):
+                    runtime.verify_archive(archive, self.config, self.target)
+
+    def test_partial_release_rejected(self):
+        self.package()
+        with self.assertRaises(ValueError):
+            runtime.verify_release(self.root / "dist", self.config)
+
+    def test_complete_release_and_mixed_commit_rejected(self):
+        self.package()
+        target = self.config["targets"][1]
+        stage = self.root / "stage-mac"
+        for name in runtime.onnxruntime.required_files(self.config, target):
+            path = stage / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture contents")
+        archive = runtime.package(stage, self.root / "dist", self.config, target, self.provenance)
+        from unittest.mock import patch
+        with patch.dict("os.environ", {}, clear=True):
+            runtime.verify_release(self.root / "dist", self.config)
+        def change_commit(files):
+            manifest = json.loads(files["manifest.json"])
+            manifest["provenance"]["repository_commit"] = "b" * 40
+            files["manifest.json"] = json.dumps(manifest).encode()
+        self.rewrite(archive, change_commit)
+        with self.assertRaises(ValueError):
+            runtime.verify_release(self.root / "dist", self.config)
+
+    def test_existing_archive_refused(self):
+        self.package()
+        (self.stage / "manifest.json").unlink()
+        with self.assertRaises(FileExistsError):
+            self.package()
+
+    def test_extra_asset_rejected(self):
+        self.package()
+        (self.root / "dist/unexpected.txt").write_text("unexpected")
+        with self.assertRaises(ValueError):
+            runtime.verify_release(self.root / "dist", self.config)
+
+    def test_wrong_target_rejected(self):
+        archive = self.package()
+        with self.assertRaises(ValueError):
+            runtime.verify_archive(archive, self.config, self.config["targets"][1])
+
+
+if __name__ == "__main__":
+    unittest.main()

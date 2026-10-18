@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "runtime": "onnxruntime",
+  "version": "1.29.0",
+  "revision": 1,
+  "source": {
+    "repository": "https://github.com/microsoft/onnxruntime.git",
+    "commit": "2e2543fbe9fae542f921d47a72d21d5a4ef0b710"
+  },
+  "c_api_version": 17,
+  "targets": [
+    {
+      "id": "windows-x64-cpu",
+      "runner": "windows-2022",
+      "system": "Windows",
+      "machine": "AMD64",
+      "allocator": "mimalloc"
+    },
+    {
+      "id": "macos-arm64-cpu",
+      "runner": "macos-15",
+      "system": "Darwin",
+      "machine": "arm64",
+      "allocator": "default"
+    }
+  ]
+}
