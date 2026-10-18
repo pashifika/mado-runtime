@@ -129,9 +129,11 @@ int main(int argc, char **argv) {
             (unsigned long)GetLastError());
     goto cleanup;
   }
-  library = LoadLibraryW(library_path);
+  /* Match Mado's loader: never satisfy DLL dependencies through PATH. */
+  library = LoadLibraryExW(library_path, NULL,
+                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
   if (library == NULL) {
-    fprintf(stderr, "LoadLibraryW failed (Windows error %lu)\n",
+    fprintf(stderr, "LoadLibraryExW failed (Windows error %lu)\n",
             (unsigned long)GetLastError());
     goto cleanup;
   }

@@ -4,12 +4,14 @@
 
 - Python 3.12, Git and CMake 3.31.6 (installed by `requirements-build.txt`)
 - Windows: Visual Studio 2022 C++ tools and Windows 11 SDK 10.0.26100.0, an x64 developer command prompt, and MSYS2 at `C:\msys64` with `mingw-w64-ucrt-x86_64-gcc` installed
+- Windows consumer test: Rust 1.98.1 and the `x86_64-pc-windows-msvc` target (installed by CI)
 - macOS: Apple Silicon with Xcode command line tools; hosted CI uses `macos-15`
 - Network access to the pinned upstream repository, submodules, CMake dependencies and Python package index
 
 Windows builds run from an x64 Visual Studio developer prompt:
 
 ```powershell
+rustup toolchain install 1.98.1 --profile minimal --target x86_64-pc-windows-msvc
 python -m pip install -r requirements-build.txt
 python scripts/runtime.py build --target windows-x64-cpu
 ```
@@ -22,7 +24,7 @@ Each build requires an unused `.work/<target>` directory. To rebuild locally, mo
 
 The version follows [Mado Pilot's third-party dependency contract](https://github.com/pashifika/mado-pilot/blob/main/docs/third-party-dependencies.md). Updating upstream also requires checking the consumer's exact-version check and C API bindings. A newer upstream version alone is not sufficient justification. Mado Mata currently pins official distribution archive and library hashes. Custom binaries have different hashes even at the same upstream version; adoption requires a separately reviewed consumer catalog/checksum update and qualification against its models. Publishing here does not automatically integrate these assets into Mado applications.
 
-`tests/smoke.c` opens the package's library by path, requests C API 17, checks the exact runtime version, creates a session and runs `tests/identity.onnx`. It verifies three float outputs. Both the installation tree and extracted ZIP are tested. Windows runs the same smoke program compiled by MSVC and UCRT64 GCC. No Python ONNX Runtime wheel participates.
+`tests/smoke.c` opens the package's library by path, requests C API 17, checks the exact runtime version, creates a session and runs `tests/identity.onnx`. It verifies three float outputs. Both the installation tree and extracted ZIP are tested. Windows runs the same smoke program compiled by MSVC and UCRT64 GCC. No Python ONNX Runtime wheel participates. Windows also runs the locked [Rust consumer](../tests/consumer/README.md) against both the installation tree and extracted archive. It uses Mado’s exact `ort` binding initialization, the MSVC Rust target, and the identity model; it does not substitute for full OCR/model qualification. Provenance records its result and the actual `rustc`/Cargo versions.
 
 This is an ABI/inference smoke test, not a model coverage suite or performance benchmark. Passing mimalloc configuration checks does not establish a performance benefit. CPU is the only execution provider configured here.
 
@@ -49,7 +51,7 @@ Asset names include runtime, upstream version, packaging revision, target and al
 4. The release job downloads this run's immutable Actions artifacts and validates the complete expected asset set and common commit
 5. It refuses existing release tags, creates a new draft, verifies downloaded uploaded assets, then publishes
 
-PRs and ordinary branch pushes cannot publish. No release credentials are available to build jobs. Actions are pinned to reviewed commit SHAs. Release concurrency prevents two release runs from racing. The workflow uses the repository's default branch for the publication gate; the push build trigger currently names `master` and should be adjusted if the default branch is renamed.
+PRs and ordinary branch pushes cannot publish. No release credentials are available to build jobs. Actions are pinned to reviewed commit SHAs. Release concurrency prevents two release runs from racing and does not cancel a running publication. New commits cancel obsolete pull-request builds; other runs remain uncanceled. The workflow uses the repository's default branch for the publication gate; the push build trigger currently names `master` and should be adjusted if the default branch is renamed.
 
 If upload or verification fails, a draft may remain. Inspect it manually; automation never overwrites, deletes or resumes an existing release. Resolve the failed draft explicitly or increase `revision` for a new release. Never reuse a published tag for different bytes.
 

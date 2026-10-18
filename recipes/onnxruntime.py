@@ -144,6 +144,8 @@ def build(config, target, work, root, run):
     compiler_version = compiler.stdout + compiler.stderr
     if target["system"] == "Windows":
         compiler_version += capture([str(ucrt_compiler()), "--version"])
+        windows_toolchain.update(rustc=capture(["rustc", "+1.98.1", "--version", "--verbose"]),
+                                 cargo=capture(["cargo", "+1.98.1", "--version"]))
     provenance = {
         "repository_commit": os.environ.get("GITHUB_SHA") or capture(["git", "rev-parse", "HEAD"], root),
         "source_commit": actual, "source_submodules": capture(["git", "submodule", "status", "--recursive"], source),
@@ -186,4 +188,11 @@ def smoke(config, target, stage, work, root, run):
         environment["PATH"] = str(gcc.parent) + os.pathsep + environment["PATH"]
         run([ucrt_smoke, library, root / "tests/identity.onnx", config["version"]], env=environment)
         smoke_results["ucrt64_gcc_consumer"] = True
+        # Match Mado's pinned Rust binding initialization, using the MSVC target.
+        environment = os.environ.copy()
+        environment["ORT_DISABLE_TELEMETRY"] = "1"
+        run(["cargo", "+1.98.1", "run", "--locked", "--manifest-path", root / "tests/consumer/Cargo.toml",
+             "--target", "x86_64-pc-windows-msvc", "--target-dir", work / "rust-consumer-target",
+             "--", library, root / "tests/identity.onnx"], env=environment)
+        smoke_results["mado_rust_ort_api17"] = True
     return smoke_results

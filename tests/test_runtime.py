@@ -71,6 +71,30 @@ class ConfigurationTests(unittest.TestCase):
                 self.validate(config)
 
 
+class SmokeOrchestrationTests(unittest.TestCase):
+    def test_windows_runs_pinned_msvc_rust_consumer(self):
+        from unittest.mock import Mock, patch
+        config = runtime.load_config()
+        runner = Mock()
+        with patch.object(Path, "is_file", return_value=True):
+            result = runtime.onnxruntime.smoke(config, config["targets"][0], Path("stage"), Path("work"), ROOT, runner)
+        command, = runner.call_args.args
+        self.assertEqual(command[:4], ["cargo", "+1.98.1", "run", "--locked"])
+        self.assertIn("x86_64-pc-windows-msvc", command)
+        self.assertIn(Path("stage/bin/onnxruntime.dll"), command)
+        self.assertEqual(runner.call_args.kwargs["env"]["ORT_DISABLE_TELEMETRY"], "1")
+        self.assertTrue(result["mado_rust_ort_api17"])
+
+    def test_rust_failure_propagates(self):
+        from unittest.mock import patch
+        def runner(command, **kwargs):
+            if command[0] == "cargo":
+                raise RuntimeError("consumer init failed")
+        config = runtime.load_config()
+        with patch.object(Path, "is_file", return_value=True), self.assertRaisesRegex(RuntimeError, "consumer init failed"):
+            runtime.onnxruntime.smoke(config, config["targets"][0], Path("stage"), Path("work"), ROOT, runner)
+
+
 class ArchiveTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

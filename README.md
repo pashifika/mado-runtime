@@ -8,7 +8,7 @@ Mado applications need shared libraries that match their runtime bindings. This 
 
 - **Consumer compatibility:** ONNX Runtime 1.29.0 with C API 17, matching Mado Pilot
 - **Native builds:** Windows x64 CPU built with MSVC 2022, Windows 11 SDK 10.0.26100.0 and mimalloc; macOS arm64 CPU with the default allocator
-- **Real inference checks:** Load the newly built shared library and run a small ONNX model, including a Windows UCRT64 GCC consumer
+- **Real inference checks:** Load the newly built shared library and run a small ONNX model, including Windows UCRT64 GCC and Mado’s pinned Rust `ort` consumers
 - **Auditable packages:** Public headers, shared libraries, Windows import library, upstream licenses, SHA-256 checksums and build provenance
 
 ## Getting started
@@ -46,6 +46,8 @@ python scripts/runtime.py verify
 ```
 
 Run `python scripts/runtime.py --help` for all commands and options. See [building and releasing](docs/building.md) for Windows setup, package layout and release recovery.
+
+Windows builds also require Rust 1.98.1 with the `x86_64-pc-windows-msvc` target. The Rust smoke checks Mado’s exact binding initialization and a small inference; full OCR/model qualification remains a separate consumer task.
 
 ## Supported runtimes
 

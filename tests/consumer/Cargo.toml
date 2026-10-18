@@ -1,0 +1,10 @@
+[package]
+name = "mado-runtime-consumer-smoke"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+
+[dependencies]
+libloading = "=0.8.9"
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "alternative-backend", "api-17"] }
