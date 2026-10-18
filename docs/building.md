@@ -3,7 +3,7 @@
 ## Requirements
 
 - Python 3.12, Git and CMake 3.31.6 (installed by `requirements-build.txt`)
-- Windows: Visual Studio 2022 C++ tools and Windows SDK, an x64 developer command prompt, and MSYS2 at `C:\msys64` with `mingw-w64-ucrt-x86_64-gcc` installed
+- Windows: Visual Studio 2022 C++ tools and Windows 11 SDK 10.0.26100.0, an x64 developer command prompt, and MSYS2 at `C:\msys64` with `mingw-w64-ucrt-x86_64-gcc` installed
 - macOS: Apple Silicon with Xcode command line tools; hosted CI uses `macos-15`
 - Network access to the pinned upstream repository, submodules, CMake dependencies and Python package index
 
@@ -18,7 +18,7 @@ Each build requires an unused `.work/<target>` directory. To rebuild locally, mo
 
 ## Source and compatibility
 
-`runtime.json` pins upstream 1.29.0 to commit `2e2543fbe9fae542f921d47a72d21d5a4ef0b710`. Source is fetched by commit, checked against `VERSION_NUMBER`, and its exact submodules are initialized. Builds enable the shared CPU library and disable telemetry. Windows enables mimalloc; macOS uses the default allocator. Windows CI checks the enabled CMake option, generated mimalloc compile/link references and built mimalloc library. macOS explicitly targets arm64 and macOS 13.3; CI checks Mach-O architecture and rejects unpackaged non-system dynamic dependencies.
+`runtime.json` pins upstream 1.29.0 to commit `2e2543fbe9fae542f921d47a72d21d5a4ef0b710`. Source is fetched by commit, checked against `VERSION_NUMBER`, and its exact submodules are initialized. Builds enable the shared CPU library and disable telemetry. Windows enables mimalloc and explicitly selects Windows 11 SDK 10.0.26100.0 in both the developer environment and CMake; macOS uses the default allocator. The generated MSBuild project must select that SDK and MSVC v143, and provenance records the selected SDK, toolset and developer environment versions. Windows CI checks the enabled CMake option, generated mimalloc compile/link references and built mimalloc library. macOS explicitly targets arm64 and macOS 13.3; CI checks Mach-O architecture and rejects unpackaged non-system dynamic dependencies.
 
 The version follows [Mado Pilot's third-party dependency contract](https://github.com/pashifika/mado-pilot/blob/main/docs/third-party-dependencies.md). Updating upstream also requires checking the consumer's exact-version check and C API bindings. A newer upstream version alone is not sufficient justification. Mado Mata currently pins official distribution archive and library hashes. Custom binaries have different hashes even at the same upstream version; adoption requires a separately reviewed consumer catalog/checksum update and qualification against its models. Publishing here does not automatically integrate these assets into Mado applications.
 

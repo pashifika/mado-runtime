@@ -14,7 +14,8 @@
       "runner": "windows-2022",
       "system": "Windows",
       "machine": "AMD64",
-      "allocator": "mimalloc"
+      "allocator": "mimalloc",
+      "windows_sdk": "10.0.26100.0"
     },
     {
       "id": "macos-arm64-cpu",

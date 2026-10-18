@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 
 def validate(config):
@@ -27,6 +28,8 @@ def validate(config):
         if name not in supported or name in seen:
             raise ValueError("Unknown or duplicate target")
         seen.add(name)
+        if target["system"] == "Windows" and target.get("windows_sdk") != "10.0.26100.0":
+            raise ValueError("Windows builds require Windows 11 SDK 10.0.26100.0")
         if tuple(target.get(k) for k in ("runner", "system", "machine", "allocator")) != supported[name]:
             raise ValueError(f"Invalid configuration for {name}")
 
@@ -34,6 +37,18 @@ def validate(config):
 def required_files(config, target):
     shared = {"bin/onnxruntime.dll", "lib/onnxruntime.lib"} if target["system"] == "Windows" else {f"lib/libonnxruntime.{config['version']}.dylib"}
     return shared | {"include/onnxruntime/onnxruntime_c_api.h", "LICENSE", "ThirdPartyNotices.txt", "build-provenance.json"}
+
+
+def verify_windows_toolchain(project, expected_sdk):
+    """Read CMake's generated MSBuild project, not just requested options."""
+    tree = ET.parse(project)
+    sdks = {node.text for node in tree.iter() if node.tag.rsplit("}", 1)[-1] == "WindowsTargetPlatformVersion"}
+    toolsets = {node.text for node in tree.iter() if node.tag.rsplit("}", 1)[-1] == "PlatformToolset"}
+    if sdks != {expected_sdk}:
+        raise ValueError(f"Configured Windows SDK mismatch: {sdks}")
+    if toolsets != {"v143"}:
+        raise ValueError(f"Expected Visual Studio 2022 MSVC v143 toolset, found {toolsets}")
+    return {"windows_sdk": expected_sdk, "platform_toolset": "v143"}
 
 
 def allocator_enabled(cache):
@@ -68,10 +83,18 @@ def build(config, target, work, root, run):
     else:
         command += ["--cmake_generator", "Unix Makefiles"]
     command += ["--cmake_extra_defines", "onnxruntime_BUILD_UNIT_TESTS=OFF"]
+    if target["system"] == "Windows":
+        command += [f"CMAKE_SYSTEM_VERSION={target['windows_sdk']}"]
     if target["system"] == "Darwin":
         command += ["CMAKE_OSX_DEPLOYMENT_TARGET=13.3", "CMAKE_OSX_ARCHITECTURES=arm64"]
     run(command, cwd=source)
     cache = (build_dir / "Release/CMakeCache.txt").read_text(encoding="utf-8")
+    windows_toolchain = {}
+    if target["system"] == "Windows":
+        windows_toolchain = verify_windows_toolchain(build_dir / "Release/onnxruntime.vcxproj", target["windows_sdk"])
+        windows_toolchain.update(vc_tools_version=os.environ.get("VCToolsVersion"),
+                                 developer_prompt_sdk=os.environ.get("WindowsSDKVersion"),
+                                 visual_studio_version=os.environ.get("VisualStudioVersion"))
     allocator_evidence = {"requested": target["allocator"]}
     if target["allocator"] == "mimalloc":
         if not allocator_enabled(cache):
@@ -124,6 +147,7 @@ def build(config, target, work, root, run):
     provenance = {
         "repository_commit": os.environ.get("GITHUB_SHA") or capture(["git", "rev-parse", "HEAD"], root),
         "source_commit": actual, "source_submodules": capture(["git", "submodule", "status", "--recursive"], source),
+        "windows_toolchain": windows_toolchain,
         "allocator_evidence": allocator_evidence, "binary_evidence": binary_evidence,
         "target": target, "build_command": list(map(str, command)), "python": sys.version,
         "cmake": capture(["cmake", "--version"]), "platform": platform.platform(),

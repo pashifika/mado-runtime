@@ -7,7 +7,7 @@ Mado applications need shared libraries that match their runtime bindings. This 
 ## Features
 
 - **Consumer compatibility:** ONNX Runtime 1.29.0 with C API 17, matching Mado Pilot
-- **Native builds:** Windows x64 CPU with mimalloc; macOS arm64 CPU with the default allocator
+- **Native builds:** Windows x64 CPU built with MSVC 2022, Windows 11 SDK 10.0.26100.0 and mimalloc; macOS arm64 CPU with the default allocator
 - **Real inference checks:** Load the newly built shared library and run a small ONNX model, including a Windows UCRT64 GCC consumer
 - **Auditable packages:** Public headers, shared libraries, Windows import library, upstream licenses, SHA-256 checksums and build provenance
 

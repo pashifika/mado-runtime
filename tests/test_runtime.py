@@ -28,6 +28,20 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(runtime.archive_name(self.config, self.config["targets"][0]),
                          "onnxruntime-v1.29.0-r1-windows-x64-cpu-mimalloc.zip")
 
+    def test_generated_windows_toolchain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "onnxruntime.vcxproj"
+            for sdk, toolset, valid in (("10.0.26100.0", "v143", True),
+                                        ("10.0.19041.0", "v143", False),
+                                        ("10.0.26100.0", "ClangCL", False)):
+                project.write_text(f'<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003"><PropertyGroup><WindowsTargetPlatformVersion>{sdk}</WindowsTargetPlatformVersion><PlatformToolset>{toolset}</PlatformToolset></PropertyGroup></Project>')
+                if valid:
+                    result = runtime.onnxruntime.verify_windows_toolchain(project, "10.0.26100.0")
+                    self.assertEqual(result["platform_toolset"], "v143")
+                else:
+                    with self.assertRaises(ValueError):
+                        runtime.onnxruntime.verify_windows_toolchain(project, "10.0.26100.0")
+
     def test_dependent_allocator_cache(self):
         for cache in ("", "onnxruntime_USE_MIMALLOC:BOOL=OFF", "onnxruntime_USE_MIMALLOC:INTERNAL=OFF"):
             self.assertFalse(runtime.onnxruntime.allocator_enabled(cache))
@@ -48,6 +62,7 @@ class ConfigurationTests(unittest.TestCase):
             lambda c: c["targets"].append(c["targets"][0]),
             lambda c: c["targets"][1].update(allocator="mimalloc"),
             lambda c: c["targets"][0].update(id="../../escape"),
+            lambda c: c["targets"][0].update(windows_sdk="10.0.19041.0"),
         ]
         for mutation in mutations:
             config = copy.deepcopy(self.config)
