@@ -85,6 +85,11 @@ class SmokeOrchestrationTests(unittest.TestCase):
         self.assertIn("/WX", commands[0])
         self.assertIn(f"/I{include}", commands[0])
         self.assertIn("-Werror", commands[1])
+        self.assertIn("-Wall", commands[1])
+        self.assertIn("-Wextra", commands[1])
+        self.assertIn("-isystem", commands[1])
+        self.assertNotIn("-I", commands[1])
+        self.assertNotIn("-isystem", commands[0])
         self.assertIn("-v", commands[1])
         self.assertNotIn("env", runner.call_args_list[0].kwargs)
         self.assertEqual(runner.call_args_list[1].kwargs["env"],

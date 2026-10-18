@@ -192,7 +192,8 @@ def compile_smoke(target, include, work, root, run):
         if not gcc.is_file():
             raise FileNotFoundError("Install MSYS2 UCRT64 GCC before building")
         ucrt_smoke = work / "smoke-ucrt64.exe"
-        run([gcc, "-v", "-municode", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", include,
+        # Treat upstream SDK annotations as external; keep our harness warnings fatal.
+        run([gcc, "-v", "-municode", "-std=c11", "-Wall", "-Wextra", "-Werror", "-isystem", include,
              root / "tests/smoke.c", "-o", ucrt_smoke], cwd=work, env=ucrt_environment(gcc))
 
 
