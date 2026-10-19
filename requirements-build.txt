@@ -1,0 +1,3 @@
+# Build tools only. Never install an onnxruntime wheel for smoke tests.
+cmake==3.31.6
+packaging==25.0
